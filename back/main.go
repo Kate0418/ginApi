@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/gin-gonic/gin";
-	"back/routes";
+	"github.com/gin-gonic/gin"
+	"back/routes"
 )
 
 func main() {

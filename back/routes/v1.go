@@ -1,7 +1,8 @@
 package routes
 
 import (
-    "github.com/gin-gonic/gin";
+    "github.com/gin-gonic/gin"
+    "back/api/controllers"
 )
 
 func V1(r *gin.Engine) {
@@ -10,4 +11,6 @@ func V1(r *gin.Engine) {
             "message": "Hello Gin!",
         })
     })
+
+    r.GET("/users", controllers.getUserController)
 }
