@@ -5,10 +5,8 @@ import (
     "gorm.io/gorm"
 )
 
-type User struct {
+type Test struct {
     ID        uint           `gorm:"primaryKey"`
-    Name      string         `gorm:"size:255;not null"`
-    Email     string         `gorm:"unique;not null"`
     CreatedAt time.Time
     UpdatedAt time.Time
     DeletedAt gorm.DeletedAt `gorm:"index"`

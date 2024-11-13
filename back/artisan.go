@@ -3,12 +3,10 @@ package main
 import (
     "fmt"
     "os"
-    "time"
     "path/filepath"
     "strings"
+    "back/database"
     "back/database/migrations"
-    "io/ioutil"
-    "regexp"
 )
 
 func main() {
@@ -19,8 +17,13 @@ func main() {
 
     switch os.Args[1] {
     case "migrate":
-        migrations.Migrate()
-        fmt.Println("マイグレーションが完了しました")
+        if len(os.Args) < 3 {
+            // 引数が不足している場合は全てのモデルをマイグレート
+            migrateAll()
+        } else {
+            // 特定のモデルをマイグレート
+            migrateModel(os.Args[2])
+        }
     case "model":
         if len(os.Args) < 3 {
             fmt.Println("モデル名を指定してください")
@@ -32,17 +35,47 @@ func main() {
     }
 }
 
+func migrateAll() {
+    db := database.Gorm()
+    for modelName, model := range migrations.Models {
+        err := db.AutoMigrate(model)
+        if err != nil {
+            fmt.Printf("%s のマイグレーションに失敗しました: %v\n", modelName, err)
+            continue
+        }
+        fmt.Printf("%s のマイグレーションが完了しました\n", modelName)
+    }
+    fmt.Println("全てのマイグレーションが完了しました")
+}
+
+func migrateModel(modelName string) {
+    db := database.Gorm()
+    model, exists := migrations.Models[modelName]
+    if !exists {
+        fmt.Printf("モデル '%s' が見つかりません\n", modelName)
+        return
+    }
+
+    err := db.AutoMigrate(model)
+    if err != nil {
+        fmt.Printf("マイグレーションに失敗しました: %v\n", err)
+        return
+    }
+    fmt.Printf("'%s' のマイグレーションが完了しました\n", modelName)
+}
+
 func createModel(modelName string) {
     // モデル名の先頭を大文字にする
     modelName = strings.Title(modelName)
 
-    // モデルファイルの作成
-    modelDir := "api/models"
+    // モデルディレクトリの作成
+    modelDir := filepath.Join("api", "models")
     if err := os.MkdirAll(modelDir, 0755); err != nil {
         fmt.Printf("モデルディレクトリの作成に失敗しました: %v\n", err)
         return
     }
 
+    // モデルファイルの内容を生成
     modelContent := fmt.Sprintf(`package models
 
 import (
@@ -55,92 +88,59 @@ type %s struct {
     CreatedAt time.Time
     UpdatedAt time.Time
     DeletedAt gorm.DeletedAt `+"`gorm:\"index\"`"+`
-}
-`, modelName)
+}`, modelName)
 
+    // モデルファイルの作成
     modelPath := filepath.Join(modelDir, strings.ToLower(modelName)+".go")
     if err := os.WriteFile(modelPath, []byte(modelContent), 0644); err != nil {
         fmt.Printf("モデルファイルの作成に失敗しました: %v\n", err)
         return
     }
 
-    // マイグレーションファイルの作成
-    timestamp := time.Now().Format("20060102_150405")
-    migrationName := fmt.Sprintf("%s_%s", timestamp, strings.ToLower(modelName))
+    fmt.Printf("%sモデルが正常に作成されました\n", modelName)
 
-    migrationContent := fmt.Sprintf(`package migrations
-
-import (
-    "back/api/models"
-    "back/database"
-)
-
-func Create%s() {
-    db := database.Gorm()
-    db.AutoMigrate(&models.%s{})
+    // マイグレーションファイルの更新
+    updateMigrationFile(modelName)
 }
-`, modelName, modelName)
 
-    migrationDir := "database/migrations"
-    if err := os.MkdirAll(migrationDir, 0755); err != nil {
-        fmt.Printf("マイグレーションディレクトリの作成に失敗しました: %v\n", err)
-        return
-    }
-
-    migrationPath := filepath.Join(migrationDir, migrationName+".go")
-    if err := os.WriteFile(migrationPath, []byte(migrationContent), 0644); err != nil {
-        fmt.Printf("マイグレーションファイルの作成に失敗しました: %v\n", err)
-        return
-    }
-
-    // 00000000_000000_migrate.goファイルの更新
-    baseMigratePath := filepath.Join("database/migrations", "00000000_000000_migrate.go")
+func updateMigrationFile(modelName string) {
+    migrationPath := filepath.Join("database", "migrations", "00000000_000000_migrate.go")
 
     // 既存のファイルを読み込む
-    content, err := ioutil.ReadFile(baseMigratePath)
+    content, err := os.ReadFile(migrationPath)
     if err != nil {
-        fmt.Printf("00000000_000000_migrate.goファイルの読み込みに失敗しました: %v\n", err)
+        fmt.Printf("マイグレーションファイルの読み込みに失敗しました: %v\n", err)
         return
     }
 
-    // 既存の関数呼び出しを保持しながら新しい関数を追加
+    // ファイルの内容を文字列に変換
     contentStr := string(content)
 
-    // Migrate関数の中身を探す
-    re := regexp.MustCompile(`func Migrate\(\) {([\s\S]*?)}`)
-    matches := re.FindStringSubmatch(contentStr)
-
-    var newContent string
-    if len(matches) > 1 {
-        // 既存の関数本体を取得
-        functionBody := matches[1]
-        // 新しい関数呼び出しを追加
-        newFunctionBody := functionBody
-        if !strings.Contains(newFunctionBody, fmt.Sprintf("Create%s()", modelName)) {
-            if strings.TrimSpace(newFunctionBody) == "" {
-                newFunctionBody = fmt.Sprintf("\n    Create%s()\n", modelName)
-            } else {
-                newFunctionBody += fmt.Sprintf("    Create%s()\n", modelName)
-            }
-        }
-        newContent = fmt.Sprintf(`package migrations
-
-func Migrate() {%s}
-`, newFunctionBody)
-    } else {
-        // Migrate関数が見つからない場合は新規作成
-        newContent = fmt.Sprintf(`package migrations
-
-func Migrate() {
-    Create%s()
-}
-`, modelName)
-    }
-
-    if err := os.WriteFile(baseMigratePath, []byte(newContent), 0644); err != nil {
-        fmt.Printf("00000000_000000_migrate.goファイルの更新に失敗しました: %v\n", err)
+    // "var Models = map[string]interface{}{" を検索
+    marker := "var Models = map[string]interface{}{"
+    parts := strings.SplitN(contentStr, marker, 2)
+    if len(parts) != 2 {
+        fmt.Println("マイグレーションファイルの形式が不正です")
         return
     }
 
-    fmt.Printf("%sモデルとマイグレーションファイルが正常に作成されました\n", modelName)
+    // 新しいモデルのエントリを作成
+    newModelEntry := fmt.Sprintf("\n    \"%s\": &models.%s{},",
+        strings.ToLower(modelName),
+        modelName)
+
+    // 新しい内容を組み立て
+    newContent := parts[0] +
+                 marker +
+                 newModelEntry +
+                 parts[1]
+
+    // ファイルに書き戻す
+    err = os.WriteFile(migrationPath, []byte(newContent), 0644)
+    if err != nil {
+        fmt.Printf("マイグレーションファイルの更新に失敗しました: %v\n", err)
+        return
+    }
+
+    fmt.Println("マイグレーションファイルを更新しました")
 }
