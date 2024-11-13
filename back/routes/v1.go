@@ -6,11 +6,8 @@ import (
 )
 
 func V1(r *gin.Engine) {
-    r.GET("/", func(c *gin.Context) {
-        c.JSON(200, gin.H{
-            "message": "Hello Gin!",
-        })
-    })
-
-    r.GET("/users", controllers.getUserController)
+	v1 := r.Group("/v1")
+	{
+		v1.GET("/users", controllers.GetUser)
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"net/url"
 
 	"github.com/joho/godotenv"
 	"gorm.io/driver/mysql"
@@ -25,7 +26,7 @@ func Gorm() *gorm.DB {
 	dbName := os.Getenv("DB_NAME")
 	dbCharset := os.Getenv("DB_CHARSET")
 	dbParseTime := os.Getenv("DB_PARSE_TIME")
-	dbLoc := os.Getenv("DB_LOC")
+	dbLoc := url.QueryEscape(os.Getenv("DB_LOC"))
 
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=%s&parseTime=%s&loc=%s",
 		dbUser, dbPassword, dbHost, dbPort, dbName, dbCharset, dbParseTime, dbLoc)
